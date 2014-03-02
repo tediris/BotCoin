@@ -19,7 +19,8 @@ void loop() {
 		counter++;
 		Serial.println("Timer1 expired");
 		//Serial.println(counter);
-		done = true;
+		timer1.set(3000);
+		timer1.start();
 		Serial.print("FINAL TIME: ");
 		Serial.println(millis());
 	}

@@ -17,12 +17,16 @@
 #define NONE -1
 #define DRIVING_FORWARD_DEBOUNCE 5
 
+#define BASE_SPEED 180
+
 int motorADir = LOW;
 int motorBDir = HIGH;
 
 bool rotating = false;
 bool drivingForward = false;
 int forwardCounter = 0;
+
+Timer turnTimer(TURN_TIME);
 
 void setup() {
 	//Serial.begin(9600);
@@ -65,7 +69,7 @@ void debugBeacon() {
  * drives towards it and hits the structure with the
  * beacon.
  */
- 
+
 void followBeacon() {
 	if (rotating) {
 		delay(500);
@@ -75,21 +79,21 @@ void followBeacon() {
 	}
 	int beaconPosition = getBeaconPosition();
 	if (beaconPosition == BEACON_CENTER) {
-		driveForward(150);
+		driveForward(BASE_SPEED);
 	} else if (beaconPosition == BEACON_LEFT) {
 		forwardCounter = 0;
 		drivingForward = true;
-		drive(140, 160);
+		drive(BASE_SPEED*0.9, BASE_SPEED*1.1);
 	} else if (beaconPosition == BEACON_RIGHT) {
 		forwardCounter = 0;
 		drivingForward = true;
-		drive(160, 140);
+		drive(BASE_SPEED*1.1, BASE_SPEED*0.9);
 	} else if (beaconPosition == NO_BEACON) {
 		if (drivingForward) {
 			forwardCounter++;
 			if (forwardCounter == DRIVING_FORWARD_DEBOUNCE) drivingForward = false;
 		} else {
-			rotateLeft(130);
+			rotateLeft(BASE_SPEED*0.8);
 			rotating = true;
 		}
 	}
