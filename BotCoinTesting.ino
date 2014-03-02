@@ -1,4 +1,6 @@
 // BotCoinTesting.ino
+#include "Timer.h"
+//#include "FrequencyDetector.h"
 
 #define LEFT A5
 #define MIDDLE A6
@@ -15,32 +17,108 @@
 #define MOTOR_B_DIR 11
 
 #define NONE -1
-#define DRIVING_FORWARD_DEBOUNCE 5
+#define DRIVING_FORWARD_DEBOUNCE_TIME 500
 
 #define BASE_SPEED 180
+#define TURN_TIME 300
+#define SCAN_TIME 600
+
+#define LOW_FREQ 1176
+#define HIGH_FREQ 333
+
+#define NO_FREQUENCY 0
+#define SERVER_FREQUENCY 1
+#define EXCHANGE_FREQUENCY 2
+
+#define INTERRUPT_PIN 0
+
+volatile bool firstWave = false;
+volatile unsigned long firstEdgeTime = 0;
+volatile unsigned long secondEdgeTime = 0;
+volatile bool frequencyDataReady = false;
 
 int motorADir = LOW;
 int motorBDir = HIGH;
 
 bool rotating = false;
+bool scanning = false;
 bool drivingForward = false;
-int forwardCounter = 0;
+
 
 Timer turnTimer(TURN_TIME);
+Timer scanTimer(SCAN_TIME);
+Timer forwardDebounceTimer(DRIVING_FORWARD_DEBOUNCE_TIME);
+
+//FrequencyDetector freqDetector(0);
 
 void setup() {
-	//Serial.begin(9600);
+	Serial.begin(9600);
 	//initBeaconDetectors();
-	initMotors();
-	drive(0, 0);
+	//initMotors();
+	//drive(0, 0);
 	//drive(-255, -255);
-	delay(2000);
+	//delay(2000); //allow things to initialize
+	//prepFrequencyData();
 }
 
 void loop() {
-	followBeacon();
-	//debugBeacon();
+	if (Serial.available()) {
+		while (Serial.available()) Serial.read();
+		Serial.println("Getting Data");
+		prepFrequencyData();
+		while (!frequencyDataReady);
+
+		int freq = getFrequency();
+		if (freq == EXCHANGE_FREQUENCY) {
+			Serial.println("Exchange");
+		} else if (freq == SERVER_FREQUENCY) {
+			Serial.println("Server");
+		} else {
+			Serial.println("None");
+		}
+	}
 }
+
+
+
+int getFrequency() {
+	frequencyDataReady = false;
+
+	unsigned long difference = secondEdgeTime - firstEdgeTime;
+    Serial.println(difference);
+    if (difference > 800 && difference < 1300) {
+    	return SERVER_FREQUENCY;
+    } else if (difference > 200 && difference < 500) {
+    	return EXCHANGE_FREQUENCY;
+    } else {
+    	return NO_FREQUENCY;
+    }
+}
+
+void cancelFrequencyRequest() {
+
+}
+
+void prepFrequencyData() {
+	firstEdgeTime = 0;
+	secondEdgeTime = 0;
+	firstWave = true;
+	frequencyDataReady = false;
+	attachInterrupt(INTERRUPT_PIN, getFrequencyData, RISING); 
+}
+
+void getFrequencyData() {
+	if (firstWave) {
+ 		firstWave = false;
+   		firstEdgeTime = micros();
+	} else { //2nd edge
+   		secondEdgeTime = micros();
+   		frequencyDataReady = true;
+   		detachInterrupt(INTERRUPT_PIN);
+ 	}
+}
+
+
 
 /* function: debugBeacon()
  * -----------------------
@@ -71,30 +149,47 @@ void debugBeacon() {
  */
 
 void followBeacon() {
+	
 	if (rotating) {
-		delay(500);
-		drive(0, 0);
-		delay(500);
-		rotating = false;
+		if (turnTimer.isExpired()) {
+			rotating = false;
+			scanning = true;
+			drive(0, 0);
+			scanTimer.start();
+		}
+		return;
 	}
+
+	if (scanning) {
+		if (scanTimer.isExpired()) {
+			scanning = false;
+		}
+		return;
+	}
+	
+
 	int beaconPosition = getBeaconPosition();
 	if (beaconPosition == BEACON_CENTER) {
+		drivingForward = true;
+		forwardDebounceTimer.start();
+
 		driveForward(BASE_SPEED);
 	} else if (beaconPosition == BEACON_LEFT) {
-		forwardCounter = 0;
 		drivingForward = true;
+		forwardDebounceTimer.start();
+
 		drive(BASE_SPEED*0.9, BASE_SPEED*1.1);
 	} else if (beaconPosition == BEACON_RIGHT) {
-		forwardCounter = 0;
+		forwardDebounceTimer.start();
 		drivingForward = true;
 		drive(BASE_SPEED*1.1, BASE_SPEED*0.9);
 	} else if (beaconPosition == NO_BEACON) {
 		if (drivingForward) {
-			forwardCounter++;
-			if (forwardCounter == DRIVING_FORWARD_DEBOUNCE) drivingForward = false;
+			if (forwardDebounceTimer.isExpired()) drivingForward = false;
 		} else {
 			rotateLeft(BASE_SPEED*0.8);
 			rotating = true;
+			turnTimer.start();
 		}
 	}
 }
@@ -108,8 +203,6 @@ void rotateRight(int speed) {
 }
 
 void driveForward(int speed) {
-	forwardCounter = 0;
-	drivingForward = true;
 	drive(speed, speed);
 }
 
@@ -160,6 +253,8 @@ void switchDirection() {
 		motorBDir = LOW;
 	}
 }
+
+/* Motor Debug Functions */
 
 void writeSpeed(int speed) {
 	analogWrite(MOTOR_A_ENABLE, speed);

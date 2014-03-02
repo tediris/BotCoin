@@ -1,8 +1,9 @@
 #include "Vinyl.h"
 
-Vinyl vinyl(A1);
+Vinyl vinyl(A0);
 
 void setup(){
+	Serial.begin(9600);
 }
 
 void loop(){

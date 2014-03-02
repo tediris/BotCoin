@@ -8,7 +8,7 @@ Timer::Timer(unsigned long ms){
 
 bool Timer::isExpired(){
 	unsigned long curTime = millis();
-	if (_startTime + _msec >= curTime){
+	if (_startTime + _msec <= curTime){
 		_running = false;
 		return true;
 	}
