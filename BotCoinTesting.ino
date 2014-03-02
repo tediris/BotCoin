@@ -38,6 +38,11 @@ void loop() {
 	//debugBeacon();
 }
 
+/* function: debugBeacon()
+ * -----------------------
+ * Prints to Serial current beacon position relative to triple sensor
+ */
+
 void debugBeacon() {
 	int beaconPosition = getBeaconPosition();
 
@@ -53,6 +58,14 @@ void debugBeacon() {
 	delay(1000);
 }
 
+
+/* function: followBeacon()
+ * ------------------------
+ * Spins around looking for a beacon, and once found,
+ * drives towards it and hits the structure with the
+ * beacon.
+ */
+ 
 void followBeacon() {
 	if (rotating) {
 		delay(500);
@@ -125,54 +138,6 @@ void drive(int leftSpeed, int rightSpeed) {
 	analogWrite(MOTOR_A_ENABLE, leftSpeed);
 	analogWrite(MOTOR_B_ENABLE, rightSpeed);
 }
-
-/*
-void drive(int leftSpeed, int rightSpeed) {
-	bool scheduleDelay = false;
-
-	if (leftSpeed > 0) {
-		if (motorADir == LOW) { 
-			digitalWrite(MOTOR_A_DIR, HIGH);
-			scheduleDelay = true;
-			motorADir = HIGH;
-		}
-	} else if (leftSpeed < 0) {
-		leftSpeed = leftSpeed*-1;
-		if (motorADir == HIGH) { 
-			digitalWrite(MOTOR_A_DIR, LOW);
-			scheduleDelay = true;
-			motorADir = LOW;
-		}
-	} else {
-		digitalWrite(MOTOR_A_DIR, LOW);
-	}
-
-	if (rightSpeed > 0) {
-		if (motorBDir == HIGH) {
-			digitalWrite(MOTOR_B_DIR, LOW);
-			scheduleDelay = true;
-			motorBDir = LOW;
-		}
-	} else if (rightSpeed < 0) {
-		rightSpeed = rightSpeed*-1;
-		if (motorBDir == LOW) {
-			digitalWrite(MOTOR_B_DIR, HIGH);
-			scheduleDelay = true;
-			motorBDir = HIGH;
-		}
-	} else {
-		digitalWrite(MOTOR_B_DIR, HIGH);
-	}
-
-	if (scheduleDelay) {
-		delay(500);
-	}
-
-	analogWrite(MOTOR_A_ENABLE, leftSpeed);
-	analogWrite(MOTOR_B_ENABLE, rightSpeed);
-}
-
-*/
 
 void switchDirection() {
 	if (motorADir == LOW) {
