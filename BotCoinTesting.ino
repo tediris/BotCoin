@@ -62,6 +62,15 @@ Timer resetMotorTimer(RESET_MOTOR_TIME);
 
 Vinyl vinyl(A0);
 
+#define ARCING_LEFT 0
+#define ARCING_RIGHT 1
+#define NO_ARC 2
+
+int beaconFollowingState = -1;
+bool lostBeacon = false;
+#define LOST_BEACON_TIME 1500
+Timer lostBeaconTimer(LOST_BEACON_TIME);
+
 /* States */
 #define SPINNING_STRONG 0
 #define SPINNING_WEAK 5
@@ -136,7 +145,7 @@ void brickBeater() {
 			break;
 
 	    case SEEKING_STRONG:
-
+	    	drive(0, 0);
 	      	beaconReading = getAverageBeaconValue();
 	      	if (beaconReading > 130) {
 
@@ -158,6 +167,7 @@ void brickBeater() {
 	    	break;
 
 	    case SEEKING_WEAK:
+	    	drive(0, 0);
 	    	beaconReading = getAverageBeaconValue();
 	      	if (beaconReading > 50 && beaconReading < 150 && analogRead(MIDDLE) < 150 && analogRead(MIDDLE) > 50) {
 	      		dogeState = DEAD;
@@ -217,12 +227,27 @@ void driveToBeacon() {
 	int beaconPosition = getBeaconPosition();
 	if (beaconPosition == BEACON_CENTER) {
 		driveForward(BASE_SPEED);
+		beaconFollowingState = NO_ARC;
+		lostBeacon = false;
 	} else if (beaconPosition == BEACON_LEFT) {
 		drive(BASE_SPEED*0.95, BASE_SPEED*1.05);
+		beaconFollowingState = ARCING_LEFT;
+		lostBeacon = false;
 	} else if (beaconPosition == BEACON_RIGHT) {
 		drive(BASE_SPEED*1.05, BASE_SPEED*0.95);
+		beaconFollowingState = ARCING_RIGHT;
+		lostBeacon = false;
 	} else if (beaconPosition == NO_BEACON) {
 		//maybe have a state change? to relocate beacon?
+		if (lostBeacon) {
+			if (lostBeaconTimer.isExpired()) {
+				dogeState = SEEKING_WEAK;
+				lostBeacon = false;
+			}
+		} else {
+			lostBeacon = true;
+			lostBeaconTimer.start();
+		}
 		driveForward(BASE_SPEED);
 	}
 }
