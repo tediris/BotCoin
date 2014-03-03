@@ -23,7 +23,7 @@
 #define NONE -1
 #define DRIVING_FORWARD_DEBOUNCE_TIME 500
 
-#define BASE_SPEED 240
+#define BASE_SPEED 220
 #define TURN_TIME 250
 #define SCAN_TIME 600
 #define DEBOUNCE_SPIN_TIME 800
@@ -75,11 +75,12 @@ Servo miner;
 
 int beaconFollowingState = -1;
 bool lostBeacon = false;
-#define LOST_BEACON_TIME 1500
+#define LOST_BEACON_TIME 2000
 Timer lostBeaconTimer(LOST_BEACON_TIME);
 
 Timer lostBeaconScan(600);
 Timer lostBeaconTurn(250);
+Timer missedVinylTimer(3000);
 
 /* States */
 #define SPINNING_STRONG 0
@@ -92,6 +93,7 @@ Timer lostBeaconTurn(250);
 #define CALMING_SENSORS 7
 #define RESTING_MOTORS 9
 #define REVERSING 8
+#define MOVING_TO_SERVER_VINYL 10
 #define DEAD 69
 
 #define RESET_MOTORS 11
@@ -101,6 +103,22 @@ Timer lostBeaconTurn(250);
 #define ALIGNING_TO_SERVER 15
 
 #define MINING_COINS 16
+
+#define BACKING_UP_FOR_VINYL 17
+#define TURNING_FOR_VINYL 18
+
+Timer vinylTurnTimer(TURN_TIME);
+Timer backupTimer(REVERSE_TIME);
+
+#define TURN_SIDE_COUNTER 5
+
+#define SERVER_LEFT 0
+#define SERVER_RIGHT 1
+
+int fieldSide = -1;
+int turnCounter = 0;
+
+bool vinylHit = false;
 
 int dogeState = SEEKING_STRONG;
 
@@ -119,7 +137,7 @@ void setup() {
 }
 
 bool hitVinyl() {
-	return analogRead(A0) < 750;
+	return analogRead(A0) < 400;
 }
 
 void loop() {
@@ -127,6 +145,7 @@ void loop() {
 	//driveForward(BASE_SPEED);
 	//testVinyl();
 	//testBeacon();
+	//testVinyl();
 }
 
 void testBeacon() {
@@ -136,6 +155,7 @@ void testBeacon() {
 }
 
 void testVinyl() {
+	//Serial.println(analogRead(A0));
 	if (hitVinyl()) {
 		Serial.println("Vinyl detected");
 	}
@@ -174,7 +194,7 @@ void brickBeater() {
 	    	//Serial.println("SEEKING_STRONG");
 	    	drive(0, 0);
 	      	beaconReading = analogRead(MIDDLE);
-	      	if (beaconReading > 130) {
+	      	if (beaconReading > 150) {
 
 	      		dogeState = RESET_MOTORS;
 	      		resetMotorTimer.start();
@@ -199,19 +219,67 @@ void brickBeater() {
 	    	drive(0, 0);
 	    	beaconReading = getAverageBeaconValue();
 	      	if (beaconReading > 50 && beaconReading < 150 && analogRead(MIDDLE) < 150 && analogRead(MIDDLE) > 50) {
-	      		dogeState = MOVING_TO_SERVER;
-	      		reachedServerTimer.start();
-	      		} else if (scanTimer.isExpired()) {
+
+	      		if (turnCounter > TURN_SIDE_COUNTER) fieldSide = SERVER_LEFT;
+	      		else fieldSide = SERVER_RIGHT;
+
+	      		dogeState = MOVING_TO_SERVER_VINYL;//MOVING_TO_SERVER Vinyl;
+	      		missedVinylTimer.start();
+	      		//reachedServerTimer.start();
+	      	} else if (scanTimer.isExpired()) {
 	      			dogeState = SPINNING_WEAK;
 	      			turnTimer.start();
+	      			turnCounter++;
 	      		}
 	    	break;
 
+	    case MOVING_TO_SERVER_VINYL:
+
+	    	driveToServerVinyl();
+
+	    	if (hitVinyl()) {
+	    		dogeState = RELOCATING_BEACON_TURN;
+	    		vinylHit = true;
+	    	} else if (missedVinylTimer.isExpired()) {
+	    		backupTimer.start();
+	    		dogeState = BACKING_UP_FOR_VINYL;
+	    	}
+	    	break;
+
+	    case BACKING_UP_FOR_VINYL:
+	    	drive(BASE_SPEED*-0.8, BASE_SPEED*-0.8);
+	    	if (backupTimer.isExpired()) {
+	    		drive(0, 0);
+	    		dogeState = TURNING_FOR_VINYL;
+	    		vinylTurnTimer.start();
+	    	}
+	    	break;
+
+	    case TURNING_FOR_VINYL:
+	    	if (fieldSide == SERVER_RIGHT) {
+	    		rotateLeft(BASE_SPEED*0.8);
+	    	} else rotateRight(0.8*BASE_SPEED);
+	    	if (vinylTurnTimer.isExpired()) {
+	    		drive(0, 0);
+	    		dogeState = MOVING_TO_SERVER_VINYL;
+	    		missedVinylTimer.start();
+	    	}
+	    	break;
+
 	    case MOVING_TO_SERVER:
+
 	    	driveToServer();
 	    	if (reachedServerTimer.isExpired()) {
 	    		dogeState = DEAD;
-	    	}
+	    	} /*else if (hitVinyl()) {
+
+	    		vinylHit = true;
+	    		if (fieldSide == SERVER_LEFT) beaconFollowingState = ARCING_LEFT;
+	    		else beaconFollowingState = ARCING_RIGHT;
+	    		dogeState = RELOCATING_BEACON_SCAN;
+	    		lostBeaconScan.start();
+
+	    	}*/
 	    	break;
 
 	    case MOVING_TO_VINYL_STRONG:
@@ -227,7 +295,7 @@ void brickBeater() {
 
 	    case DEBOUNCE_SPIN:
 	    	//Serial.println("DEBOUNCE_SPIN");
-	    	rotateRight(BASE_SPEED*0.8);
+	    	rotateRight(BASE_SPEED*0.7);
 	    	if (debounceSpin.isExpired()) {
 	    		dogeState = CALMING_SENSORS;
 	    		drive(0, 0);
@@ -266,7 +334,16 @@ void brickBeater() {
 	     	drive(0, 0);
 	    	beaconReading = getAverageBeaconValue();
 	      	if (beaconReading > 150 && beaconReading < 450 && analogRead(MIDDLE) < 450 && analogRead(MIDDLE) > 75) {
-	      		dogeState = MOVING_TO_SERVER;
+	      		if (vinylHit) {
+	      			dogeState = MOVING_TO_SERVER;
+	      			reachedServerTimer.start();
+	      			if (fieldSide == SERVER_LEFT) {
+	      				Serial.println("Server Left");
+	      			} else {
+	      				Serial.println("Server Right");
+	      			}
+	      		}
+	      		else dogeState = MOVING_TO_SERVER_VINYL;
 	      		reachedServerTimer.start();
 	      		} else if (lostBeaconScan.isExpired()) {
 	      			dogeState = RELOCATING_BEACON_TURN;
@@ -275,10 +352,14 @@ void brickBeater() {
 	    	break;
 
 	    case RELOCATING_BEACON_TURN:
+	    	if (vinylHit) {
 
-	    	if (beaconFollowingState == ARCING_RIGHT) rotateRight(BASE_SPEED*0.8);
-	    	else if (beaconFollowingState == ARCING_LEFT) rotateLeft(BASE_SPEED*0.8);
-	    	else rotateRight(BASE_SPEED*0.8);
+	    		if (fieldSide == SERVER_LEFT) rotateLeft(BASE_SPEED*0.8);
+	    		else if (fieldSide == SERVER_RIGHT) rotateRight(BASE_SPEED*0.8);
+	    	} else {
+	    		if (fieldSide == SERVER_LEFT) rotateRight(BASE_SPEED*0.8);
+	    		else if (fieldSide == SERVER_RIGHT) rotateLeft(BASE_SPEED*0.8);
+	    	}
 
 			if (lostBeaconTurn.isExpired()) {
 				dogeState = RELOCATING_BEACON_SCAN;
@@ -303,18 +384,82 @@ void testMiner() {
 	delay(2000);
 }
 
+void driveToServerVinyl() {
+	int beaconPosition = getBeaconPosition();
+
+	if (fieldSide == SERVER_LEFT) {
+		if (beaconPosition == BEACON_CENTER) {
+			driveForward(BASE_SPEED*0.9);
+			//beaconFollowingState = NO_ARC;
+			lostBeacon = false;
+		} else if (beaconPosition == BEACON_LEFT) {
+			driveForward(BASE_SPEED*0.9);
+			beaconFollowingState = ARCING_LEFT;
+			lostBeacon = false;
+		} else if (beaconPosition == BEACON_RIGHT) {
+			drive(BASE_SPEED*1.1, BASE_SPEED*0.9);
+			beaconFollowingState = ARCING_RIGHT;
+			lostBeacon = false;
+		} else if (beaconPosition == NO_BEACON) {
+			//maybe have a state change? to relocate beacon?
+			if (lostBeacon) {
+				if (lostBeaconTimer.isExpired()) {
+					dogeState = RELOCATING_BEACON_SCAN;
+					lostBeaconScan.start();
+					//dogeState = SEEKING_WEAK;
+					lostBeacon = false;
+				}
+			} else {
+				lostBeacon = true;
+				lostBeaconTimer.start();
+			}
+			driveForward(BASE_SPEED);
+		}	
+	} else {
+		if (beaconPosition == BEACON_CENTER) {
+			driveForward(BASE_SPEED*0.9);
+			//beaconFollowingState = NO_ARC;
+			lostBeacon = false;
+		} else if (beaconPosition == BEACON_LEFT) {
+			drive(BASE_SPEED*1.1, BASE_SPEED*0.9);
+			beaconFollowingState = ARCING_LEFT;
+			lostBeacon = false;
+		} else if (beaconPosition == BEACON_RIGHT) {
+			driveForward(BASE_SPEED*0.9);
+			beaconFollowingState = ARCING_RIGHT;
+			lostBeacon = false;
+		} else if (beaconPosition == NO_BEACON) {
+			//maybe have a state change? to relocate beacon?
+			if (lostBeacon) {
+				if (lostBeaconTimer.isExpired()) {
+					dogeState = RELOCATING_BEACON_SCAN;
+					lostBeaconScan.start();
+					//dogeState = SEEKING_WEAK;
+					lostBeacon = false;
+				}
+			} else {
+				lostBeacon = true;
+				lostBeaconTimer.start();
+			}
+			driveForward(BASE_SPEED);
+		}
+	}
+}
+
 void driveToServer() {
 	int beaconPosition = getBeaconPosition();
+
+	
 	if (beaconPosition == BEACON_CENTER) {
 		driveForward(BASE_SPEED*0.9);
 		//beaconFollowingState = NO_ARC;
 		lostBeacon = false;
 	} else if (beaconPosition == BEACON_LEFT) {
-		drive(BASE_SPEED*0.8, BASE_SPEED);
+		drive(BASE_SPEED*0.9, BASE_SPEED*1.1);
 		beaconFollowingState = ARCING_LEFT;
 		lostBeacon = false;
 	} else if (beaconPosition == BEACON_RIGHT) {
-		drive(BASE_SPEED, BASE_SPEED*0.8);
+		drive(BASE_SPEED*1.1, BASE_SPEED*0.9);
 		beaconFollowingState = ARCING_RIGHT;
 		lostBeacon = false;
 	} else if (beaconPosition == NO_BEACON) {
@@ -330,8 +475,7 @@ void driveToServer() {
 			lostBeacon = true;
 			lostBeaconTimer.start();
 		}
-		driveForward(BASE_SPEED);
-	}	
+	}
 }
 
 void driveToBeacon() {

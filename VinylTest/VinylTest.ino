@@ -10,8 +10,4 @@ void loop(){
 	if (vinyl.hitLine()){
 		Serial.println("LINE");
 	}
-	else{
-		Serial.println("NO LINE");
-	}
-	delay(500);
 }

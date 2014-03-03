@@ -13,8 +13,8 @@ public:
 	void rotateLeft(int speed);
 	void rotateRight(int speed);
 	void stop();
-
 	void writeDir(int dir1, int dir2);
+	void writeSpeed(int speed1, int speed2);
 
 
 private:

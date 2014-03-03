@@ -48,19 +48,19 @@ void Drive::drive(int leftSpeed, int rightSpeed){
 	analogWrite(_e2, rightRate);
 }
 
-void driveForward(int speed){
+void Drive::driveForward(int speed){
 	drive(speed, speed);
 }
 
-void driveBackward(int speed){
+void Drive::driveBackward(int speed){
 	drive(-speed, -speed);
 }
 
-void rotateLeft(int speed){
+void Drive::rotateLeft(int speed){
 	drive(-speed, speed);
 }
 
-void rotateRight(int speed){
+void Drive::rotateRight(int speed){
 	drive(speed, -speed);
 }
 
@@ -68,12 +68,12 @@ void Drive::stop(){
 	drive(0,0);
 }
 
-void writeDir(int dir1, int dir2){
+void Drive::writeDir(int dir1, int dir2){
 	digitalWrite(_dir1, dir1);
 	digitalWrite(_dir2, dir2);
 }
 
-void writeSpeed(int speed1, int speed2){
+void Drive::writeSpeed(int speed1, int speed2){
 	analogWrite(_e1, speed1);
 	analogWrite(_e2, speed2);
 }
