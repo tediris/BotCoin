@@ -6,6 +6,8 @@
 #define LEFT A5
 #define MIDDLE A6
 #define RIGHT A7
+#define MIDDLE_BACK A10
+#define MIDDLE_LEFT A9
 
 #define BEACON_CENTER 0
 #define BEACON_LEFT 1
@@ -23,10 +25,10 @@
 #define BASE_SPEED 240
 #define TURN_TIME 250
 #define SCAN_TIME 600
-#define DEBOUNCE_SPIN_TIME 500
+#define DEBOUNCE_SPIN_TIME 800
 #define SENSOR_RESET_TIME 500
-#define REVERSE_TIME 200
-#define REST_MOTOR_TIME 200
+#define REVERSE_TIME 500
+#define REST_MOTOR_TIME 500
 #define RESET_MOTOR_TIME 500
 
 #define LOW_FREQ 1176
@@ -71,6 +73,9 @@ bool lostBeacon = false;
 #define LOST_BEACON_TIME 1500
 Timer lostBeaconTimer(LOST_BEACON_TIME);
 
+Timer lostBeaconScan(600);
+Timer lostBeaconTurn(250);
+
 /* States */
 #define SPINNING_STRONG 0
 #define SPINNING_WEAK 5
@@ -85,6 +90,9 @@ Timer lostBeaconTimer(LOST_BEACON_TIME);
 #define DEAD 69
 
 #define RESET_MOTORS 11
+#define RELOCATING_BEACON_SCAN 12
+#define RELOCATING_BEACON_TURN 13
+#define MOVING_TO_SERVER 14
 
 int dogeState = SEEKING_STRONG;
 
@@ -109,6 +117,13 @@ void loop() {
 	brickBeater();
 	//driveForward(BASE_SPEED);
 	//testVinyl();
+	//testBeacon();
+}
+
+void testBeacon() {
+	int avg = getAverageBeaconValue();
+	Serial.println(avg);
+	delay(100);
 }
 
 void testVinyl() {
@@ -125,6 +140,7 @@ void brickBeater() {
 		
 
 		case SPINNING_STRONG:
+			Serial.println("SPINNING_STRONG");
 
 			rotateRight(BASE_SPEED*0.8);
 			if (turnTimer.isExpired()) {
@@ -135,6 +151,7 @@ void brickBeater() {
 			break;
 
 		case SPINNING_WEAK:
+			Serial.println("SPINNING_WEAK");
 
 			rotateRight(BASE_SPEED*0.8);
 			if (turnTimer.isExpired()) {
@@ -145,8 +162,9 @@ void brickBeater() {
 			break;
 
 	    case SEEKING_STRONG:
+	    	Serial.println("SEEKING_STRONG");
 	    	drive(0, 0);
-	      	beaconReading = getAverageBeaconValue();
+	      	beaconReading = analogRead(MIDDLE);
 	      	if (beaconReading > 130) {
 
 	      		dogeState = RESET_MOTORS;
@@ -160,33 +178,43 @@ void brickBeater() {
 	    	break;
 
 	    case RESET_MOTORS:
-
+	    	Serial.println("RESET_MOTORS");
+	    	drive(0, 0);
 	    	if (resetMotorTimer.isExpired()) {
 	    		dogeState = MOVING_TO_VINYL_STRONG;
 	    	}
 	    	break;
 
 	    case SEEKING_WEAK:
+	    	Serial.println("SEEKING_WEAK");
 	    	drive(0, 0);
 	    	beaconReading = getAverageBeaconValue();
 	      	if (beaconReading > 50 && beaconReading < 150 && analogRead(MIDDLE) < 150 && analogRead(MIDDLE) > 50) {
-	      		dogeState = DEAD;
+	      		dogeState = MOVING_TO_SERVER;
 	      		} else if (scanTimer.isExpired()) {
 	      			dogeState = SPINNING_WEAK;
 	      			turnTimer.start();
 	      		}
 	    	break;
 
+	    case MOVING_TO_SERVER:
+	    	driveToServer();
+
+	    	break;
+
 	    case MOVING_TO_VINYL_STRONG:
+	    	Serial.println("MOVING_TO_VINYL_STRONG");
 	    	//driveForward(BASE_SPEED*0.8);
 	    	driveToBeacon();
 	    	if (hitVinyl()) {
 	    		dogeState = REVERSING;
+	    		drive(0, 0);
 	    		reverseTimer.start();
 	    	}
 	    	break;
 
 	    case DEBOUNCE_SPIN:
+	    	Serial.println("DEBOUNCE_SPIN");
 	    	rotateRight(BASE_SPEED*0.8);
 	    	if (debounceSpin.isExpired()) {
 	    		dogeState = CALMING_SENSORS;
@@ -196,6 +224,7 @@ void brickBeater() {
 	    	break;
 	      // do something
 	     case CALMING_SENSORS:
+	     Serial.println("CALMING_SENSORS");
 	     	if (sensorResetTimer.isExpired()) {
 	     		dogeState = SEEKING_WEAK;
 	     		scanTimer.start();
@@ -203,6 +232,7 @@ void brickBeater() {
 	     	break;
 
 	     case REVERSING:
+	     	Serial.println("REVERSING");
 	     	drive(BASE_SPEED*-0.8, BASE_SPEED*-0.8);
 	     	if (reverseTimer.isExpired()) {
 	     		dogeState = RESTING_MOTORS;
@@ -211,19 +241,49 @@ void brickBeater() {
 	     	break;
 
 	     case RESTING_MOTORS:
+	     	Serial.println("RESTING_MOTORS");
 	     	drive(0, 0);
 	     	if (restMotorTimer.isExpired()) {
 	     		dogeState = DEBOUNCE_SPIN;
 	     		debounceSpin.start();
 	     	}
+	     	break;
+
+	     case RELOCATING_BEACON_SCAN:
+	     	//Serial.println
+	     	drive(0, 0);
+	    	beaconReading = getAverageBeaconValue();
+	      	if (beaconReading > 50 && beaconReading < 150 && analogRead(MIDDLE) < 150 && analogRead(MIDDLE) > 50) {
+	      		dogeState = DEAD;
+	      		} else if (lostBeaconScan.isExpired()) {
+	      			dogeState = RELOCATING_BEACON_TURN;
+	      			lostBeaconTurn.start();
+	      		}
+	    	break;
+
+	    case RELOCATING_BEACON_TURN:
+
+	    	if (beaconFollowingState == ARCING_RIGHT) rotateRight(BASE_SPEED*0.8);
+	    	else if (beaconFollowingState == ARCING_LEFT) rotateLeft(BASE_SPEED*0.8);
+	    	else rotateRight(BASE_SPEED*0.8);
+
+			if (lostBeaconTurn.isExpired()) {
+				dogeState = RELOCATING_BEACON_SCAN;
+				drive(0, 0);
+				lostBeaconScan.start();
+			}
+			break;
 
 	     case DEAD:
-	     	driveToBeacon();
+	     	drive(0, 0);
+	     	//Serial.println("DEAD");
+	     	//driveToBeacon();
 	     	break;
+
 	}
 }
 
-void driveToBeacon() {
+void driveToServer() {
 	int beaconPosition = getBeaconPosition();
 	if (beaconPosition == BEACON_CENTER) {
 		driveForward(BASE_SPEED);
@@ -241,13 +301,29 @@ void driveToBeacon() {
 		//maybe have a state change? to relocate beacon?
 		if (lostBeacon) {
 			if (lostBeaconTimer.isExpired()) {
-				dogeState = SEEKING_WEAK;
+				dogeState = RELOCATING_BEACON_SCAN;
+				lostBeaconScan.start();
+				//dogeState = SEEKING_WEAK;
 				lostBeacon = false;
 			}
 		} else {
 			lostBeacon = true;
 			lostBeaconTimer.start();
 		}
+		driveForward(BASE_SPEED);
+	}	
+}
+
+void driveToBeacon() {
+	int beaconPosition = getBeaconPosition();
+	if (beaconPosition == BEACON_CENTER) {
+		driveForward(BASE_SPEED);
+	} else if (beaconPosition == BEACON_LEFT) {
+		drive(BASE_SPEED*0.95, BASE_SPEED*1.05);
+	} else if (beaconPosition == BEACON_RIGHT) {
+		drive(BASE_SPEED*1.05, BASE_SPEED*0.95);
+	} else if (beaconPosition == NO_BEACON) {
+		//maybe have a state change? to relocate beacon?
 		driveForward(BASE_SPEED);
 	}
 }
